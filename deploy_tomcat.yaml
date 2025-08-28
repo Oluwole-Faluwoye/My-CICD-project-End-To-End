@@ -1,0 +1,93 @@
+---
+# =========================
+# PLAY 1: Bootstrap Jenkins public key (idempotent)
+# =========================
+- name: Ensure Jenkins public key exists on targets (bootstrap once)
+  hosts: "tag_Environment_{{ environment }}"
+  become: true
+  gather_facts: false
+  tags: [bootstrap]
+
+  # These two are passed from Jenkins for bootstrap connection
+  vars:
+    # ansible_user is passed via CLI (ec2-user/ubuntu)
+    # ansible_ssh_private_key_file is passed via CLI (Bootstrap-Key)
+    jenkins_pub_key: "{{ jenkins_pub_key | default('/home/ansibleadmin/.ssh/id_rsa.pub') }}"
+    target_user: "ansibleadmin"
+
+  tasks:
+    - name: Ensure {{ target_user }} user exists
+      user:
+        name: "{{ target_user }}"
+        state: present
+
+    - name: Ensure {{ target_user }} .ssh directory exists
+      file:
+        path: "/home/{{ target_user }}/.ssh"
+        state: directory
+        owner: "{{ target_user }}"
+        group: "{{ target_user }}"
+        mode: '0700'
+
+    - name: Add Jenkins public key to {{ target_user }} authorized_keys (idempotent)
+      authorized_key:
+        user: "{{ target_user }}"
+        key: "{{ lookup('file', jenkins_pub_key) }}"
+        state: present
+        manage_dir: false
+
+# =========================
+# PLAY 2: Deploy WAR with Jenkins key
+# =========================
+- name: Deploy webapp to Tomcat
+  hosts: "tag_Environment_{{ environment }}"
+  become: true
+  gather_facts: false
+  tags: [deploy]
+
+  # For this play we connect with Jenkins key, passed from Jenkinsfile:
+  #   -e ansible_user=ansibleadmin
+  #   -e ansible_ssh_private_key_file=/home/ansibleadmin/.ssh/id_rsa
+  vars:
+    src_path: "{{ workspace_path }}/webapp/target/webapp.war"
+    dest_dir: "/opt/tomcat9/webapps"
+    dest_path: "{{ dest_dir }}/webapp.war"
+
+  tasks:
+    - name: Ensure Tomcat webapps directory exists
+      file:
+        path: "{{ dest_dir }}"
+        state: directory
+        owner: ec2-user
+        group: ansibleadmin
+        mode: '0775'
+
+    - name: Copy WAR file
+      copy:
+        src: "{{ src_path }}"
+        dest: "{{ dest_path }}"
+        owner: ec2-user
+        group: ansibleadmin
+        mode: '0664'
+
+    - name: Restart Tomcat
+      systemd:
+        name: tomcat
+        state: restarted
+        enabled: true
+
+    - name: Wait for Tomcat to start
+      wait_for:
+        host: "{{ ansible_host | default(inventory_hostname) }}"
+        port: 8080
+        delay: 10
+        timeout: 90
+
+    - name: Verify deployment
+      uri:
+        url: "http://{{ ansible_host | default(inventory_hostname) }}:8080/webapp/"
+        status_code: 200
+      register: result
+      retries: 5
+      delay: 5
+      until: result.status == 200
