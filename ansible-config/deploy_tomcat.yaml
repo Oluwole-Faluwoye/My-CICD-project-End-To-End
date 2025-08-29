@@ -1,5 +1,5 @@
 # =========================
-# PLAY 0: Ensure all hosts are reachable via SSH
+# PLAY 0: Ensure SSH connectivity (optional)
 # =========================
 - name: Ensure SSH connections can be made to all hosts
   hosts: "tag_Environment_{{ environment }}"
@@ -22,8 +22,6 @@
   gather_facts: false
   become: true
   vars:
-    ansible_ssh_user: "{{ ansible_user }}"
-    ansible_ssh_pass: "{{ ansible_password }}"
     src_path: "{{ workspace_path }}/webapp/target/webapp.war"
     dest_dir: "/opt/tomcat9/webapps"
     dest_path: "{{ dest_dir }}/webapp.war"

@@ -10,7 +10,6 @@ pipeline {
     environment {
         WORKSPACE = "${env.WORKSPACE}"
         NEXUS_CREDENTIAL_ID = 'Nexus-Credential'
-        BOOTSTRAP_USER = 'ec2-user'  // only needed if using bootstrap; can ignore
     }
 
     tools {
@@ -105,7 +104,7 @@ pipeline {
                 withCredentials([usernamePassword(credentialsId: 'Ansible-Admin-Cred',
                                                  usernameVariable: 'ANSIBLE_USER',
                                                  passwordVariable: 'ANSIBLE_PASS')]) {
-                    sh """
+                    sh '''
                     ansible-playbook -i ${WORKSPACE}/ansible-config/aws_ec2.yaml \
                         ${WORKSPACE}/ansible-config/deploy_tomcat.yaml \
                         -e environment=${HOSTS} \
@@ -113,7 +112,7 @@ pipeline {
                         -e ansible_user=${ANSIBLE_USER} \
                         -e ansible_password=${ANSIBLE_PASS} \
                         --tags deploy
-                    """
+                    '''
                 }
             }
         }
@@ -124,7 +123,7 @@ pipeline {
                 withCredentials([usernamePassword(credentialsId: 'Ansible-Admin-Cred',
                                                  usernameVariable: 'ANSIBLE_USER',
                                                  passwordVariable: 'ANSIBLE_PASS')]) {
-                    sh """
+                    sh '''
                     ansible-playbook -i ${WORKSPACE}/ansible-config/aws_ec2.yaml \
                         ${WORKSPACE}/ansible-config/deploy_tomcat.yaml \
                         -e environment=${HOSTS} \
@@ -132,7 +131,7 @@ pipeline {
                         -e ansible_user=${ANSIBLE_USER} \
                         -e ansible_password=${ANSIBLE_PASS} \
                         --tags deploy
-                    """
+                    '''
                 }
             }
         }
@@ -147,7 +146,7 @@ pipeline {
                 withCredentials([usernamePassword(credentialsId: 'Ansible-Admin-Cred',
                                                  usernameVariable: 'ANSIBLE_USER',
                                                  passwordVariable: 'ANSIBLE_PASS')]) {
-                    sh """
+                    sh '''
                     ansible-playbook -i ${WORKSPACE}/ansible-config/aws_ec2.yaml \
                         ${WORKSPACE}/ansible-config/deploy_tomcat.yaml \
                         -e environment=${HOSTS} \
@@ -155,7 +154,7 @@ pipeline {
                         -e ansible_user=${ANSIBLE_USER} \
                         -e ansible_password=${ANSIBLE_PASS} \
                         --tags deploy
-                    """
+                    '''
                 }
             }
         }
