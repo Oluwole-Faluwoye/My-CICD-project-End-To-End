@@ -1,4 +1,18 @@
 # =========================
+# PLAY 0: Ensure SSH connectivity (skip host key checking)
+# =========================
+- name: Ensure SSH connections can be made to all hosts
+  hosts: "tag_Environment_{{ environment }}"
+  gather_facts: false
+  become: false
+  vars:
+    ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+
+  tasks:
+    - name: Test SSH connectivity
+      ping:
+
+# =========================
 # PLAY 1: Deploy WAR to Tomcat
 # =========================
 - name: Deploy webapp to Tomcat
@@ -11,7 +25,7 @@
     dest_path: "{{ dest_dir }}/webapp.war"
 
   tasks:
-    - name: Ensure Tomcat webapps directory exists with correct permissions
+    - name: Ensure Tomcat webapps directory exists
       file:
         path: "{{ dest_dir }}"
         state: directory
@@ -19,28 +33,29 @@
         group: ansibleadmin
         mode: '0775'
 
-    - name: Copy WAR file
+    - name: Copy WAR file to Tomcat
       copy:
         src: "{{ src_path }}"
         dest: "{{ dest_path }}"
         owner: ansibleadmin
         group: ansibleadmin
         mode: '0664'
+      tags: deploy
 
-    - name: Restart Tomcat
+    - name: Restart Tomcat service
       systemd:
         name: tomcat
         state: restarted
         enabled: true
 
-    - name: Wait for Tomcat to start
+    - name: Wait for Tomcat to start on port 8080
       wait_for:
         host: "{{ ansible_host | default(inventory_hostname) }}"
         port: 8080
         delay: 10
         timeout: 90
 
-    - name: Verify deployment
+    - name: Verify webapp deployment
       uri:
         url: "http://{{ ansible_host | default(inventory_hostname) }}:8080/webapp/"
         status_code: 200
