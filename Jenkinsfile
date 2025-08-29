@@ -10,10 +10,8 @@ pipeline {
     environment {
         WORKSPACE = "${env.WORKSPACE}"
         NEXUS_CREDENTIAL_ID = 'Nexus-Credential'
-        // Path to Jenkins-generated SSH private key on the Jenkins box (created by your bootstrap script)
         JENKINS_SSH_KEY_PATH = '/home/ansibleadmin/.ssh/id_rsa'
         JENKINS_SSH_PUB_PATH = '/home/ansibleadmin/.ssh/id_rsa.pub'
-        // Bootstrap SSH username used by your AMI (adjust if Ubuntu/Debian)
         BOOTSTRAP_USER = 'ec2-user'
     }
 
@@ -24,7 +22,7 @@ pipeline {
 
     stages {
 
-        // ------------------- BUILD & TEST (UNCHANGED) -------------------
+        // ------------------- BUILD & TEST -------------------
         stage('Build') {
             steps {
                 sh 'mvn clean package'
@@ -38,29 +36,19 @@ pipeline {
         }
 
         stage('Unit Test') {
-            steps {
-                sh 'mvn test'
-            }
+            steps { sh 'mvn test' }
         }
 
         stage('Integration Test') {
-            steps {
-                sh 'mvn verify -DskipUnitTests'
-            }
+            steps { sh 'mvn verify -DskipUnitTests' }
         }
 
         stage('Checkstyle Code Analysis') {
-            steps {
-                sh 'mvn checkstyle:checkstyle'
-            }
-            post {
-                success {
-                    echo 'Generated Checkstyle report.'
-                }
-            }
+            steps { sh 'mvn checkstyle:checkstyle' }
+            post { success { echo 'Generated Checkstyle report.' } }
         }
 
-        // ------------------- SONARQUBE (UNCHANGED) -------------------
+        // ------------------- SONARQUBE -------------------
         stage('SonarQube Inspection') {
             steps {
                 script {
@@ -69,12 +57,10 @@ pipeline {
                     echo "Using JAVA_HOME = ${env.JAVA_HOME}"
                     sh 'java -version'
 
-                    withEnv([
-                        'MAVEN_OPTS=--add-opens java.base/java.lang=ALL-UNNAMED ' +
-                                     '--add-opens java.base/java.io=ALL-UNNAMED ' +
-                                     '--add-opens java.base/java.util=ALL-UNNAMED ' +
-                                     '--add-opens java.base/java.lang.reflect=ALL-UNNAMED'
-                    ]) {
+                    withEnv(['MAVEN_OPTS=--add-opens java.base/java.lang=ALL-UNNAMED ' +
+                             '--add-opens java.base/java.io=ALL-UNNAMED ' +
+                             '--add-opens java.base/java.util=ALL-UNNAMED ' +
+                             '--add-opens java.base/java.lang.reflect=ALL-UNNAMED']) {
                         withSonarQubeEnv('SonarQube') {
                             withCredentials([string(credentialsId: 'Sonarqube-Token', variable: 'SONAR_TOKEN')]) {
                                 sh """
@@ -91,14 +77,10 @@ pipeline {
         }
 
         stage('SonarQube GateKeeper') {
-            steps {
-                timeout(time: 1, unit: 'HOURS') {
-                    waitForQualityGate abortPipeline: true
-                }
-            }
+            steps { timeout(time: 1, unit: 'HOURS') { waitForQualityGate abortPipeline: true } }
         }
 
-        // ------------------- NEXUS (UNCHANGED) -------------------
+        // ------------------- NEXUS -------------------
         stage('Nexus Artifact Uploader') {
             steps {
                 nexusArtifactUploader(
@@ -109,27 +91,40 @@ pipeline {
                     version: "${env.BUILD_ID}-${env.BUILD_TIMESTAMP}",
                     repository: 'maven-project-releases',
                     credentialsId: "${NEXUS_CREDENTIAL_ID}",
-                    artifacts: [
-                        [artifactId: 'webapp',
-                         classifier: '',
-                         file: "${WORKSPACE}/webapp/target/webapp.war",
-                         type: 'war']
-                    ]
+                    artifacts: [[
+                        artifactId: 'webapp',
+                        classifier: '',
+                        file: "${WORKSPACE}/webapp/target/webapp.war",
+                        type: 'war'
+                    ]]
                 )
             }
         }
 
-        // ------------------- DEPLOYMENT (dynamic inventory + key bootstrap) -------------------
+        // ------------------- POPULATE KNOWN_HOSTS -------------------
+        stage('Populate known_hosts') {
+            steps {
+                withCredentials([file(credentialsId: 'Bootstrap-Key', variable: 'BOOTSTRAP_KEY_FILE')]) {
+                    sh """
+                    # Dynamically add all EC2 hosts from inventory to known_hosts
+                    for host in \$(ansible-inventory -i ${WORKSPACE}/ansible-config/aws_ec2.yaml --list | jq -r '.. | .ansible_host? // empty'); do
+                        echo "Adding \$host to known_hosts"
+                        ssh-keyscan -H \$host >> ~/.ssh/known_hosts 2>/dev/null
+                    done
+                    """
+                }
+            }
+        }
+
+        // ------------------- DEPLOY TO DEVELOPMENT -------------------
         stage('Deploy to Development Env') {
             environment { HOSTS = 'dev' }
             steps {
-                withCredentials([
-                    // Secret File credential that holds your JenkinsBootstrapKey.pem
-                    file(credentialsId: 'Bootstrap-Key', variable: 'BOOTSTRAP_KEY_FILE')
-                ]) {
+                withCredentials([file(credentialsId: 'Bootstrap-Key', variable: 'BOOTSTRAP_KEY_FILE')]) {
                     sh """
-                    # 1) Bootstrap Jenkins public key (only adds if missing)
-                    ansible-playbook -i ${WORKSPACE}/ansible-config/aws_ec2.yaml ${WORKSPACE}/ansible-config/deploy_tomcat.yaml \
+                    # Bootstrap Jenkins key
+                    ansible-playbook -i ${WORKSPACE}/ansible-config/aws_ec2.yaml \
+                      ${WORKSPACE}/ansible-config/deploy_tomcat.yaml \
                       -e environment=${HOSTS} \
                       -e workspace_path=${WORKSPACE} \
                       -e jenkins_pub_key=${JENKINS_SSH_PUB_PATH} \
@@ -139,8 +134,9 @@ pipeline {
                       -e ansible_ssh_private_key_file=${BOOTSTRAP_KEY_FILE} \
                       --tags bootstrap
 
-                    # 2) Deploy using Jenkins key
-                    ansible-playbook -i ${WORKSPACE}/ansible-config/aws_ec2.yaml ${WORKSPACE}/ansible-config/deploy_tomcat.yaml \
+                    # Deploy WAR using Jenkins key
+                    ansible-playbook -i ${WORKSPACE}/ansible-config/aws_ec2.yaml \
+                      ${WORKSPACE}/ansible-config/deploy_tomcat.yaml \
                       -e environment=${HOSTS} \
                       -e workspace_path=${WORKSPACE} \
                       -e jenkins_pub_key=${JENKINS_SSH_PUB_PATH} \
@@ -156,11 +152,10 @@ pipeline {
         stage('Deploy to Staging Env') {
             environment { HOSTS = 'stage' }
             steps {
-                withCredentials([
-                    file(credentialsId: 'Bootstrap-Key', variable: 'BOOTSTRAP_KEY_FILE')
-                ]) {
+                withCredentials([file(credentialsId: 'Bootstrap-Key', variable: 'BOOTSTRAP_KEY_FILE')]) {
                     sh """
-                    ansible-playbook -i ${WORKSPACE}/ansible-config/aws_ec2.yaml ${WORKSPACE}/ansible-config/deploy_tomcat.yaml \
+                    ansible-playbook -i ${WORKSPACE}/ansible-config/aws_ec2.yaml \
+                      ${WORKSPACE}/ansible-config/deploy_tomcat.yaml \
                       -e environment=${HOSTS} \
                       -e workspace_path=${WORKSPACE} \
                       -e jenkins_pub_key=${JENKINS_SSH_PUB_PATH} \
@@ -170,7 +165,8 @@ pipeline {
                       -e ansible_ssh_private_key_file=${BOOTSTRAP_KEY_FILE} \
                       --tags bootstrap
 
-                    ansible-playbook -i ${WORKSPACE}/ansible-config/aws_ec2.yaml ${WORKSPACE}/ansible-config/deploy_tomcat.yaml \
+                    ansible-playbook -i ${WORKSPACE}/ansible-config/aws_ec2.yaml \
+                      ${WORKSPACE}/ansible-config/deploy_tomcat.yaml \
                       -e environment=${HOSTS} \
                       -e workspace_path=${WORKSPACE} \
                       -e jenkins_pub_key=${JENKINS_SSH_PUB_PATH} \
@@ -184,19 +180,16 @@ pipeline {
         }
 
         stage('Quality Assurance Approval') {
-            steps {
-                input('Do you want to proceed to Production?')
-            }
+            steps { input('Do you want to proceed to Production?') }
         }
 
         stage('Deploy to Production Env') {
             environment { HOSTS = 'prod' }
             steps {
-                withCredentials([
-                    file(credentialsId: 'Bootstrap-Key', variable: 'BOOTSTRAP_KEY_FILE')
-                ]) {
+                withCredentials([file(credentialsId: 'Bootstrap-Key', variable: 'BOOTSTRAP_KEY_FILE')]) {
                     sh """
-                    ansible-playbook -i ${WORKSPACE}/ansible-config/aws_ec2.yaml ${WORKSPACE}/ansible-config/deploy_tomcat.yaml \
+                    ansible-playbook -i ${WORKSPACE}/ansible-config/aws_ec2.yaml \
+                      ${WORKSPACE}/ansible-config/deploy_tomcat.yaml \
                       -e environment=${HOSTS} \
                       -e workspace_path=${WORKSPACE} \
                       -e jenkins_pub_key=${JENKINS_SSH_PUB_PATH} \
@@ -206,7 +199,8 @@ pipeline {
                       -e ansible_ssh_private_key_file=${BOOTSTRAP_KEY_FILE} \
                       --tags bootstrap
 
-                    ansible-playbook -i ${WORKSPACE}/ansible-config/aws_ec2.yaml ${WORKSPACE}/ansible-config/deploy_tomcat.yaml \
+                    ansible-playbook -i ${WORKSPACE}/ansible-config/aws_ec2.yaml \
+                      ${WORKSPACE}/ansible-config/deploy_tomcat.yaml \
                       -e environment=${HOSTS} \
                       -e workspace_path=${WORKSPACE} \
                       -e jenkins_pub_key=${JENKINS_SSH_PUB_PATH} \
@@ -218,6 +212,7 @@ pipeline {
                 }
             }
         }
+
     }
 
     post {
