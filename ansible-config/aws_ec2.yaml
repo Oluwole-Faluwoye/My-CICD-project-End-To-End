@@ -4,18 +4,20 @@ regions:
   - us-east-1
   - us-east-2
 
-# Fetch all running Tomcat instances (no static environment filter)
+# Fetch all running Tomcat instances
 filters:
   "tag:Role": "Tomcat"
   "instance-state-name": "running"
 
-# Group hosts by Environment tag
+# Group hosts dynamically by Environment tag with a single underscore separator
 keyed_groups:
   - key: tags.Environment
-    prefix: tag_Environment_
+    prefix: tag_Environment
+    separator: "_"
 
 # Use private IPs for Ansible connections
 hostnames:
   - private-ip-address
+
 compose:
   ansible_host: private_ip_address

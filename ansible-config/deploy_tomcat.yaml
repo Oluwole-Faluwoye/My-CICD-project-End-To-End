@@ -8,10 +8,7 @@
   gather_facts: false
   tags: [bootstrap]
 
-  # These two are passed from Jenkins for bootstrap connection
   vars:
-    # ansible_user is passed via CLI (ec2-user/ubuntu)
-    # ansible_ssh_private_key_file is passed via CLI (Bootstrap-Key)
     jenkins_pub_key: "{{ jenkins_pub_key | default('/home/ansibleadmin/.ssh/id_rsa.pub') }}"
     target_user: "ansibleadmin"
 
@@ -45,9 +42,6 @@
   gather_facts: false
   tags: [deploy]
 
-  # For this play we connect with Jenkins key, passed from Jenkinsfile:
-  #   -e ansible_user=ansibleadmin
-  #   -e ansible_ssh_private_key_file=/home/ansibleadmin/.ssh/id_rsa
   vars:
     src_path: "{{ workspace_path }}/webapp/target/webapp.war"
     dest_dir: "/opt/tomcat9/webapps"
