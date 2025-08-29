@@ -1,25 +1,20 @@
 plugin: amazon.aws.aws_ec2
 
-# Add as many regions as you use
 regions:
   - us-east-1
   - us-east-2
-  # - eu-west-1
-  # - eu-central-1
-  # - ap-south-1
 
-# Only discover running Tomcat instances for a given environment
+# Fetch all running Tomcat instances (no static environment filter)
 filters:
-  "tag:Environment": "{{ environment }}"
   "tag:Role": "Tomcat"
   "instance-state-name": "running"
 
-# Group hosts by Environment so Jenkins can target e.g. tag_Environment_dev
+# Group hosts by Environment tag
 keyed_groups:
   - key: tags.Environment
     prefix: tag_Environment_
 
-# Optional, often useful:
+# Use private IPs for Ansible connections
 hostnames:
   - private-ip-address
 compose:
