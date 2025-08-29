@@ -9,7 +9,7 @@ filters:
   "tag:Role": "Tomcat"
   "instance-state-name": "running"
 
-# Group hosts dynamically by Environment tag with a single underscore separator
+# Group hosts dynamically by Environment tag
 keyed_groups:
   - key: tags.Environment
     prefix: tag_Environment
@@ -19,5 +19,10 @@ keyed_groups:
 hostnames:
   - private-ip-address
 
+# Compose ansible_host variable
 compose:
-  ansible_host: private_ip_address
+  ansible_host: private-ip-address
+
+# Optional: connect using ansibleadmin
+# ansible_user: ansibleadmin
+# ansible_ssh_pass: "{{ lookup('env','ANSIBLE_ADMIN_PASS') }}"

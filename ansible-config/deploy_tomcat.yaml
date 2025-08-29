@@ -1,73 +1,29 @@
----
 # =========================
-# PLAY 0: Ensure all hosts are in known_hosts
+# PLAY 0: Ensure all hosts are reachable via SSH
 # =========================
-- name: Add EC2 hosts to known_hosts dynamically
+- name: Ensure SSH connections can be made to all hosts
   hosts: "tag_Environment_{{ environment }}"
   gather_facts: false
   become: false
-  tags: [bootstrap]
-
-  tasks:
-    - name: Ensure .ssh directory exists for ansible_user
-      file:
-        path: "/home/{{ ansible_user }}/.ssh"
-        state: directory
-        owner: "{{ ansible_user }}"
-        group: "{{ ansible_user }}"
-        mode: '0700'
-
-    - name: Add host key to known_hosts
-      known_hosts:
-        name: "{{ ansible_host }}"
-        key: "{{ lookup('pipe','ssh-keyscan -H ' + ansible_host) }}"
-        path: "/home/{{ ansible_user }}/.ssh/known_hosts"
-        state: present
-
-# =========================
-# PLAY 1: Bootstrap Jenkins public key (idempotent)
-# =========================
-- name: Ensure Jenkins public key exists on targets (bootstrap once)
-  hosts: "tag_Environment_{{ environment }}"
-  become: true
-  gather_facts: false
-  tags: [bootstrap]
-
   vars:
-    jenkins_pub_key: "{{ jenkins_pub_key | default('/home/ansibleadmin/.ssh/id_rsa.pub') }}"
-    target_user: "ansibleadmin"
+    ansible_ssh_user: "{{ ansible_user }}"
+    ansible_ssh_pass: "{{ ansible_password }}"
+    ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
 
   tasks:
-    - name: Ensure {{ target_user }} user exists
-      user:
-        name: "{{ target_user }}"
-        state: present
-
-    - name: Ensure {{ target_user }} .ssh directory exists
-      file:
-        path: "/home/{{ target_user }}/.ssh"
-        state: directory
-        owner: "{{ target_user }}"
-        group: "{{ target_user }}"
-        mode: '0700'
-
-    - name: Add Jenkins public key to {{ target_user }} authorized_keys (idempotent)
-      authorized_key:
-        user: "{{ target_user }}"
-        key: "{{ lookup('file', jenkins_pub_key) }}"
-        state: present
-        manage_dir: false
+    - name: Test SSH connectivity
+      ping:
 
 # =========================
-# PLAY 2: Deploy WAR with Jenkins key
+# PLAY 1: Deploy WAR to Tomcat
 # =========================
 - name: Deploy webapp to Tomcat
   hosts: "tag_Environment_{{ environment }}"
-  become: true
   gather_facts: false
-  tags: [deploy]
-
+  become: true
   vars:
+    ansible_ssh_user: "{{ ansible_user }}"
+    ansible_ssh_pass: "{{ ansible_password }}"
     src_path: "{{ workspace_path }}/webapp/target/webapp.war"
     dest_dir: "/opt/tomcat9/webapps"
     dest_path: "{{ dest_dir }}/webapp.war"
@@ -77,7 +33,7 @@
       file:
         path: "{{ dest_dir }}"
         state: directory
-        owner: ec2-user
+        owner: ansibleadmin
         group: ansibleadmin
         mode: '0775'
 
@@ -85,7 +41,7 @@
       copy:
         src: "{{ src_path }}"
         dest: "{{ dest_path }}"
-        owner: ec2-user
+        owner: ansibleadmin
         group: ansibleadmin
         mode: '0664'
 
