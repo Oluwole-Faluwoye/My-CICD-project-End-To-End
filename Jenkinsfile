@@ -10,10 +10,8 @@ pipeline {
     environment {
         WORKSPACE = "${env.WORKSPACE}"
         NEXUS_CREDENTIAL_ID = 'Nexus-Credential'
-        // Path to Jenkins-generated SSH private key on the Jenkins box (created by your bootstrap script)
         JENKINS_SSH_KEY_PATH = '/home/ansibleadmin/.ssh/id_rsa'
         JENKINS_SSH_PUB_PATH = '/home/ansibleadmin/.ssh/id_rsa.pub'
-        // Bootstrap SSH username used by your AMI (adjust if Ubuntu/Debian)
         BOOTSTRAP_USER = 'ec2-user'
     }
 
@@ -24,7 +22,7 @@ pipeline {
 
     stages {
 
-        // ------------------- BUILD & TEST (UNCHANGED) -------------------
+        // ------------------- BUILD & TEST -------------------
         stage('Build') {
             steps {
                 sh 'mvn clean package'
@@ -60,13 +58,12 @@ pipeline {
             }
         }
 
-        // ------------------- SONARQUBE (UNCHANGED) -------------------
+        // ------------------- SONARQUBE -------------------
         stage('SonarQube Inspection') {
             steps {
                 script {
                     env.JAVA_HOME = "/usr/lib/jvm/java-17-amazon-corretto.x86_64"
                     env.PATH = "${env.JAVA_HOME}/bin:${env.PATH}"
-                    echo "Using JAVA_HOME = ${env.JAVA_HOME}"
                     sh 'java -version'
 
                     withEnv([
@@ -98,7 +95,7 @@ pipeline {
             }
         }
 
-        // ------------------- NEXUS (UNCHANGED) -------------------
+        // ------------------- NEXUS -------------------
         stage('Nexus Artifact Uploader') {
             steps {
                 nexusArtifactUploader(
@@ -119,36 +116,38 @@ pipeline {
             }
         }
 
-        // ------------------- DEPLOYMENT (dynamic inventory + key bootstrap) -------------------
+        // ------------------- DEPLOYMENT STAGES -------------------
         stage('Deploy to Development Env') {
             environment { HOSTS = 'dev' }
             steps {
-                withCredentials([
-                    // Secret File credential that holds your JenkinsBootstrapKey.pem
-                    file(credentialsId: 'Bootstrap-Key', variable: 'BOOTSTRAP_KEY_FILE')
-                ]) {
-                    sh """
-                    # 1) Bootstrap Jenkins public key (only adds if missing)
-                    ansible-playbook -i ${WORKSPACE}/ansible-config/aws_ec2.yaml ${WORKSPACE}/ansible-config/deploy_tomcat.yaml \
-                      -e environment=${HOSTS} \
-                      -e workspace_path=${WORKSPACE} \
-                      -e jenkins_pub_key=${JENKINS_SSH_PUB_PATH} \
-                      -e jenkins_priv_key=${JENKINS_SSH_KEY_PATH} \
-                      -e bootstrap_user=${BOOTSTRAP_USER} \
-                      -e ansible_user=${BOOTSTRAP_USER} \
-                      -e ansible_ssh_private_key_file=${BOOTSTRAP_KEY_FILE} \
-                      --tags bootstrap
+                withCredentials([file(credentialsId: 'Bootstrap-Key', variable: 'BOOTSTRAP_KEY_FILE')]) {
+                    script {
+                        try {
+                            sh """
+                            ansible-playbook -i ${WORKSPACE}/ansible-config/aws_ec2.yaml ${WORKSPACE}/ansible-config/deploy_tomcat.yaml \
+                              -e environment=${HOSTS} \
+                              -e workspace_path=${WORKSPACE} \
+                              -e jenkins_pub_key=${JENKINS_SSH_PUB_PATH} \
+                              -e jenkins_priv_key=${JENKINS_SSH_KEY_PATH} \
+                              -e bootstrap_user=${BOOTSTRAP_USER} \
+                              -e ansible_user=${BOOTSTRAP_USER} \
+                              -e ansible_ssh_private_key_file=${BOOTSTRAP_KEY_FILE} \
+                              --tags bootstrap
 
-                    # 2) Deploy using Jenkins key
-                    ansible-playbook -i ${WORKSPACE}/ansible-config/aws_ec2.yaml ${WORKSPACE}/ansible-config/deploy_tomcat.yaml \
-                      -e environment=${HOSTS} \
-                      -e workspace_path=${WORKSPACE} \
-                      -e jenkins_pub_key=${JENKINS_SSH_PUB_PATH} \
-                      -e jenkins_priv_key=${JENKINS_SSH_KEY_PATH} \
-                      -e ansible_user=ansibleadmin \
-                      -e ansible_ssh_private_key_file=${JENKINS_SSH_KEY_PATH} \
-                      --tags deploy
-                    """
+                            ansible-playbook -i ${WORKSPACE}/ansible-config/aws_ec2.yaml ${WORKSPACE}/ansible-config/deploy_tomcat.yaml \
+                              -e environment=${HOSTS} \
+                              -e workspace_path=${WORKSPACE} \
+                              -e jenkins_pub_key=${JENKINS_SSH_PUB_PATH} \
+                              -e jenkins_priv_key=${JENKINS_SSH_KEY_PATH} \
+                              -e ansible_user=ansibleadmin \
+                              -e ansible_ssh_private_key_file=${JENKINS_SSH_KEY_PATH} \
+                              --tags deploy
+                            """
+                        } catch (err) {
+                            echo "❌ Deployment to ${HOSTS} failed!"
+                            error("Deployment failed: ${err}")
+                        }
+                    }
                 }
             }
         }
@@ -156,29 +155,34 @@ pipeline {
         stage('Deploy to Staging Env') {
             environment { HOSTS = 'stage' }
             steps {
-                withCredentials([
-                    file(credentialsId: 'Bootstrap-Key', variable: 'BOOTSTRAP_KEY_FILE')
-                ]) {
-                    sh """
-                    ansible-playbook -i ${WORKSPACE}/ansible-config/aws_ec2.yaml ${WORKSPACE}/ansible-config/deploy_tomcat.yaml \
-                      -e environment=${HOSTS} \
-                      -e workspace_path=${WORKSPACE} \
-                      -e jenkins_pub_key=${JENKINS_SSH_PUB_PATH} \
-                      -e jenkins_priv_key=${JENKINS_SSH_KEY_PATH} \
-                      -e bootstrap_user=${BOOTSTRAP_USER} \
-                      -e ansible_user=${BOOTSTRAP_USER} \
-                      -e ansible_ssh_private_key_file=${BOOTSTRAP_KEY_FILE} \
-                      --tags bootstrap
+                withCredentials([file(credentialsId: 'Bootstrap-Key', variable: 'BOOTSTRAP_KEY_FILE')]) {
+                    script {
+                        try {
+                            sh """
+                            ansible-playbook -i ${WORKSPACE}/ansible-config/aws_ec2.yaml ${WORKSPACE}/ansible-config/deploy_tomcat.yaml \
+                              -e environment=${HOSTS} \
+                              -e workspace_path=${WORKSPACE} \
+                              -e jenkins_pub_key=${JENKINS_SSH_PUB_PATH} \
+                              -e jenkins_priv_key=${JENKINS_SSH_KEY_PATH} \
+                              -e bootstrap_user=${BOOTSTRAP_USER} \
+                              -e ansible_user=${BOOTSTRAP_USER} \
+                              -e ansible_ssh_private_key_file=${BOOTSTRAP_KEY_FILE} \
+                              --tags bootstrap
 
-                    ansible-playbook -i ${WORKSPACE}/ansible-config/aws_ec2.yaml ${WORKSPACE}/ansible-config/deploy_tomcat.yaml \
-                      -e environment=${HOSTS} \
-                      -e workspace_path=${WORKSPACE} \
-                      -e jenkins_pub_key=${JENKINS_SSH_PUB_PATH} \
-                      -e jenkins_priv_key=${JENKINS_SSH_KEY_PATH} \
-                      -e ansible_user=ansibleadmin \
-                      -e ansible_ssh_private_key_file=${JENKINS_SSH_KEY_PATH} \
-                      --tags deploy
-                    """
+                            ansible-playbook -i ${WORKSPACE}/ansible-config/aws_ec2.yaml ${WORKSPACE}/ansible-config/deploy_tomcat.yaml \
+                              -e environment=${HOSTS} \
+                              -e workspace_path=${WORKSPACE} \
+                              -e jenkins_pub_key=${JENKINS_SSH_PUB_PATH} \
+                              -e jenkins_priv_key=${JENKINS_SSH_KEY_PATH} \
+                              -e ansible_user=ansibleadmin \
+                              -e ansible_ssh_private_key_file=${JENKINS_SSH_KEY_PATH} \
+                              --tags deploy
+                            """
+                        } catch (err) {
+                            echo "❌ Deployment to ${HOSTS} failed!"
+                            error("Deployment failed: ${err}")
+                        }
+                    }
                 }
             }
         }
@@ -192,32 +196,38 @@ pipeline {
         stage('Deploy to Production Env') {
             environment { HOSTS = 'prod' }
             steps {
-                withCredentials([
-                    file(credentialsId: 'Bootstrap-Key', variable: 'BOOTSTRAP_KEY_FILE')
-                ]) {
-                    sh """
-                    ansible-playbook -i ${WORKSPACE}/ansible-config/aws_ec2.yaml ${WORKSPACE}/ansible-config/deploy_tomcat.yaml \
-                      -e environment=${HOSTS} \
-                      -e workspace_path=${WORKSPACE} \
-                      -e jenkins_pub_key=${JENKINS_SSH_PUB_PATH} \
-                      -e jenkins_priv_key=${JENKINS_SSH_KEY_PATH} \
-                      -e bootstrap_user=${BOOTSTRAP_USER} \
-                      -e ansible_user=${BOOTSTRAP_USER} \
-                      -e ansible_ssh_private_key_file=${BOOTSTRAP_KEY_FILE} \
-                      --tags bootstrap
+                withCredentials([file(credentialsId: 'Bootstrap-Key', variable: 'BOOTSTRAP_KEY_FILE')]) {
+                    script {
+                        try {
+                            sh """
+                            ansible-playbook -i ${WORKSPACE}/ansible-config/aws_ec2.yaml ${WORKSPACE}/ansible-config/deploy_tomcat.yaml \
+                              -e environment=${HOSTS} \
+                              -e workspace_path=${WORKSPACE} \
+                              -e jenkins_pub_key=${JENKINS_SSH_PUB_PATH} \
+                              -e jenkins_priv_key=${JENKINS_SSH_KEY_PATH} \
+                              -e bootstrap_user=${BOOTSTRAP_USER} \
+                              -e ansible_user=${BOOTSTRAP_USER} \
+                              -e ansible_ssh_private_key_file=${BOOTSTRAP_KEY_FILE} \
+                              --tags bootstrap
 
-                    ansible-playbook -i ${WORKSPACE}/ansible-config/aws_ec2.yaml ${WORKSPACE}/ansible-config/deploy_tomcat.yaml \
-                      -e environment=${HOSTS} \
-                      -e workspace_path=${WORKSPACE} \
-                      -e jenkins_pub_key=${JENKINS_SSH_PUB_PATH} \
-                      -e jenkins_priv_key=${JENKINS_SSH_KEY_PATH} \
-                      -e ansible_user=ansibleadmin \
-                      -e ansible_ssh_private_key_file=${JENKINS_SSH_KEY_PATH} \
-                      --tags deploy
-                    """
+                            ansible-playbook -i ${WORKSPACE}/ansible-config/aws_ec2.yaml ${WORKSPACE}/ansible-config/deploy_tomcat.yaml \
+                              -e environment=${HOSTS} \
+                              -e workspace_path=${WORKSPACE} \
+                              -e jenkins_pub_key=${JENKINS_SSH_PUB_PATH} \
+                              -e jenkins_priv_key=${JENKINS_SSH_KEY_PATH} \
+                              -e ansible_user=ansibleadmin \
+                              -e ansible_ssh_private_key_file=${JENKINS_SSH_KEY_PATH} \
+                              --tags deploy
+                            """
+                        } catch (err) {
+                            echo "❌ Deployment to ${HOSTS} failed!"
+                            error("Deployment failed: ${err}")
+                        }
+                    }
                 }
             }
         }
+
     }
 
     post {
