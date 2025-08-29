@@ -106,10 +106,18 @@ pipeline {
             steps {
                 withCredentials([file(credentialsId: 'Bootstrap-Key', variable: 'BOOTSTRAP_KEY_FILE')]) {
                     sh """
+                    # Ensure Jenkins .ssh directory exists
+                    mkdir -p /var/lib/jenkins/.ssh
+                    chmod 700 /var/lib/jenkins/.ssh
+
+                    # Ensure known_hosts file exists
+                    touch /var/lib/jenkins/.ssh/known_hosts
+                    chmod 600 /var/lib/jenkins/.ssh/known_hosts
+
                     # Dynamically add all EC2 hosts from inventory to known_hosts
                     for host in \$(ansible-inventory -i ${WORKSPACE}/ansible-config/aws_ec2.yaml --list | jq -r '.. | .ansible_host? // empty'); do
                         echo "Adding \$host to known_hosts"
-                        ssh-keyscan -H \$host >> ~/.ssh/known_hosts 2>/dev/null
+                        ssh-keyscan -H \$host >> /var/lib/jenkins/.ssh/known_hosts 2>/dev/null
                     done
                     """
                 }
@@ -212,7 +220,6 @@ pipeline {
                 }
             }
         }
-
     }
 
     post {
