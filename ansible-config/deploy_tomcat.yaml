@@ -1,4 +1,4 @@
-# =========================
+# ========================
 # PLAY 0: Ensure SSH connectivity (skip host key checking)
 # =========================
 - name: Ensure SSH connections can be made to all hosts
