@@ -1,5 +1,30 @@
 ---
 # =========================
+# PLAY 0: Ensure all hosts are in known_hosts
+# =========================
+- name: Add EC2 hosts to known_hosts dynamically
+  hosts: "tag_Environment_{{ environment }}"
+  gather_facts: false
+  become: false
+  tags: [bootstrap]
+
+  tasks:
+    - name: Ensure .ssh directory exists for ansible_user
+      file:
+        path: "/home/{{ ansible_user }}/.ssh"
+        state: directory
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: '0700'
+
+    - name: Add host key to known_hosts
+      known_hosts:
+        name: "{{ ansible_host }}"
+        key: "{{ lookup('pipe','ssh-keyscan -H ' + ansible_host) }}"
+        path: "/home/{{ ansible_user }}/.ssh/known_hosts"
+        state: present
+
+# =========================
 # PLAY 1: Bootstrap Jenkins public key (idempotent)
 # =========================
 - name: Ensure Jenkins public key exists on targets (bootstrap once)
