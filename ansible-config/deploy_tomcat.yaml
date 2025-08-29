@@ -5,10 +5,13 @@
   hosts: "tag_Environment_{{ environment }}"
   gather_facts: false
   become: false
-  remote_user: "{{ ansible_user }}"
   vars:
-    ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+    ansible_connection: ssh
     ansible_ssh_pass: "{{ ansible_password }}"
+    ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+    ansible_ssh_extra_args: "-o PreferredAuthentications=password -o PubkeyAuthentication=no"
+  remote_user: "{{ ansible_user }}"
+
   tasks:
     - name: Test SSH connectivity
       ping:
@@ -28,6 +31,8 @@
     dest_path: "{{ dest_dir }}/webapp.war"
     ansible_ssh_pass: "{{ ansible_password }}"
     ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+    ansible_connection: ssh
+    ansible_ssh_extra_args: "-o PreferredAuthentications=password -o PubkeyAuthentication=no"
 
   tasks:
     - name: Ensure Tomcat webapps directory exists
