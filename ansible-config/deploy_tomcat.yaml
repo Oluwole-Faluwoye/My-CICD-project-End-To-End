@@ -1,20 +1,4 @@
 # =========================
-# PLAY 0: Ensure SSH connectivity (optional)
-# =========================
-- name: Ensure SSH connections can be made to all hosts
-  hosts: "tag_Environment_{{ environment }}"
-  gather_facts: false
-  become: false
-  vars:
-    ansible_ssh_user: "{{ ansible_user }}"
-    ansible_ssh_pass: "{{ ansible_password }}"
-    ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
-
-  tasks:
-    - name: Test SSH connectivity
-      ping:
-
-# =========================
 # PLAY 1: Deploy WAR to Tomcat
 # =========================
 - name: Deploy webapp to Tomcat
@@ -27,7 +11,7 @@
     dest_path: "{{ dest_dir }}/webapp.war"
 
   tasks:
-    - name: Ensure Tomcat webapps directory exists
+    - name: Ensure Tomcat webapps directory exists with correct permissions
       file:
         path: "{{ dest_dir }}"
         state: directory
